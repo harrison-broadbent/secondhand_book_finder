@@ -51,6 +51,12 @@ else
   end
 end
 
+if not File.file?("previous_search_titles.json") 
+  File.open("previous_search_titles.json", 'w')  do |f|
+    f.write({"titles": []}.to_json)
+  end
+end
+
 ### We use the Goodreads API wrapper gem to make accessing data easier.
 ### We then proceed to collect all the books on a users shelf.
 ### Default is the 'to-read' shelf.
