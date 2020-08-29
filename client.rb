@@ -6,6 +6,8 @@ require 'open-uri'
 require 'nokogiri'
 require 'json'
 
+require_relative 'ebay_search'
+
 ### Setup OAuth API keys for Goodreads login.
 ### Keys are stored in a keys/ folder so they are not shared publicly
 
@@ -73,37 +75,93 @@ pages_of_results.times do |page_num|
   end
 end
 
-### Now that we have all the titles, we search to try and find them.
-### Searching for non-ascii titles breaks our code, so we filter then out.
-### Brotherhood books offers no API, so we manually scrape their web-pages.
+ebs = EbaySearch.new('Harrison-goodread-PRD-a7aad0465-e35ace13', 'JSON', books_only = true)
+location = 'AU'
+max_price = 15
 
-brotherhood_search_url = 'https://www.brotherhoodbooks.org.au/catalogsearch/result/?q='
 avaliable_titles = {}
 
 titles.each do |title|
   puts title
-  if title.ascii_only?
-    brotherhood_search_url = 'https://www.brotherhoodbooks.org.au/catalogsearch/result/?q=' + title
+
+  ebs.get_search_url(title, max_price, location)
+  resp = ebs.search_ebay
+  puts resp
+  if resp['errors']
+    puts 'error'
   else
-    break
-  end
+    number_of_results = resp['findItemsAdvancedResponse'][0]['searchResult'][0]['@count'].to_i
 
-  search_page = Nokogiri::HTML(::OpenURI.open_uri(brotherhood_search_url)).xpath('//*[@class="product-image-photo "]')
+    if number_of_results > 0
+      price_item = resp['findItemsAdvancedResponse'][0]['searchResult'][0]['item'][0]['sellingStatus'][0]['currentPrice'][0]['__value__'].to_i
 
-  (1..10).each do |counter|
-    if search_page[counter]
-      book_title_from_search = search_page[counter].values.last
-      if book_title_from_search.include?(title) || title.include?(book_title_from_search)
-        puts book_title_from_search, title
-        puts book_title_from_search.include? title
-        puts title.include? book_title_from_search
-        avaliable_titles[title] = brotherhood_search_url
+      is_shipping_calculated = resp['findItemsAdvancedResponse'][0]['searchResult'][0]['item'][0]['shippingInfo'][0]['shippingType']
+      if is_shipping_calculated.nil? || (is_shipping_calculated[0] == 'Flat')
+        price_postage = resp['findItemsAdvancedResponse'][0]['searchResult'][0]['item'][0]['shippingInfo'][0]['shippingServiceCost'][0]['__value__'].to_i
+      else
+        # it is calculated
+        price_postage = 0
       end
-    else
-      break
+
+      if price_postage + price_item <= max_price
+        puts price_item, price_postage
+        avaliable_titles[title] = resp['findItemsAdvancedResponse'][0]['itemSearchURL'][0]
+        puts 'found'
+      end
     end
+  end
+  puts 'next'
+  puts
+end
+
+puts '__________ eBay __________'
+
+### look through titles we found last time to check if we have found any new ones
+previous_titles = JSON.parse(File.read("previous_search_titles.json"))
+# clone the available titles so if we add asterixes to their title, they wont get mixed with our regular titles
+titles_to_save = avaliable_titles.clone
+
+titles_to_update = {}
+json_to_save = {"titles": []}
+number_of_new_titles = 0
+
+puts previous_titles
+
+# create a hash of titles to update in the form of old:new
+avaliable_titles.keys.each do |title|
+  if previous_titles["titles"].include?(title)
+    ### we found this title last time as well
+  else
+    ### we didnt find the title last time
+    ### we replace the title with one marked with an asterix
+    ### add an asterix * to show its newly found
+    ### and increment our counter
+    titles_to_update[title] = "#{title} (*)"
+    number_of_new_titles += 1
   end
 end
 
-puts '__________ Brotherhood Books __________'
-puts avaliable_titles.keys
+### iterate through titles to update and actually update
+titles_to_update.keys.each do |title|
+  new_title = titles_to_update[title]
+  avaliable_titles[new_title] = avaliable_titles.delete title
+end
+
+titles_to_save.keys.each do |title|
+  json_to_save[:titles].append(title)
+end
+File.open("previous_search_titles.json", "w") do |f|
+  f << json_to_save.to_json
+end
+
+puts avaliable_titles
+
+### sort available titles with new additions at the bottom
+avaliable_titles.keys.sort{|title| title.to_s.include?("*") ? 1 : 0}.each do |title|
+  puts title, avaliable_titles[title]
+  puts
+end
+
+puts avaliable_titles.length.to_s + ' titles found!'
+puts number_of_new_titles.to_s + ' new titles found —'
+puts titles_to_update.keys

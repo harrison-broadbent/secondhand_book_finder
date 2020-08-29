@@ -1,0 +1,3 @@
+- beware of digital books
+- max price does not take into account any shipping fees - feedback!!
+- search storewide, not just in books
