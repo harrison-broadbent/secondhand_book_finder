@@ -170,4 +170,7 @@ end
 
 puts avaliable_titles.length.to_s + ' titles found!'
 puts number_of_new_titles.to_s + ' new titles found —'
-puts titles_to_update.keys
+
+titles_to_update.keys.each do |title|
+  puts title, titles_to_save[title]
+end

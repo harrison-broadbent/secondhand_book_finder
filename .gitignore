@@ -4,3 +4,4 @@ keys/
 node_modules/
 package-lock.json
 credentials.json
+previous_search_results.json
